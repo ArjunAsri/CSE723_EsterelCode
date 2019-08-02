@@ -1,0 +1,89 @@
+
+%Module Specifications
+%1 -/ The cruising speed(cruise Speed) only when the cruise control is enabled, ON, STDBY, DISABLED
+%2 - cruise speed equals current speed when ON is pressed or whenever the the SET button pressed after ON button has been pressed - so set a flag
+%3 -/ cruise speed should be increased by speedInc when QuickAccel is pressed, this new value should be lower than the speed max limit
+%4 -/ cruise speed should be decreased by speedInc when Quicldeaccel is pressed, this new value should be higher than the min speed
+%5 - cruise should be between MAX and MIN speed, whenever an attempt is made to set the cruise speed to higher or lower than the min max speeds,
+%    the speed should be limited to min or max speeds respectively 
+module cruiseSpeedManagement:
+	function saturateThrottle(float, integer) : float; %function declaration
+	input inputCruiseState: integer;
+	input inputON, inputSET; %pure signal 
+	input inputQuickAccel;
+	input inputQuickDecel;
+	output outputcruiseSpeed : float;
+	output outputfunctionOutput: float;
+	input inputSpeed: float; %currentcarSpeed from the sensor
+	var SpeedMin := 30.0f : float, SpeedMax := 150.0f: float in
+	var SpeedInc := 2.5f: float, carSpeed := 0.0f : float in
+	var initialOn := 0 : integer in
+	[
+
+	loop
+	
+		%cruise speed should onlu be managed when the cruise control is enabled meaning 
+		%when it is in the ON ,
+		%standby OR disable mode
+		if(?inputCruiseState) = 0 then
+			initialOn:= 0;  		%reset the initial on
+		end if;
+	
+		if ((?inputCruiseState = 1) or (?inputCruiseState = 2) or (?inputCruiseState = 3)) then % and statement can also be used int he function
+			%emit functionOutput (saturateThrottle(2.5f,1));
+			%emit functionOutput(2.5f);
+
+			present inputQuickAccel and not inputQuickDecel then
+				if (((carSpeed) + SpeedInc) < SpeedMax) then %this can be a c function
+					carSpeed := carSpeed + SpeedInc;
+					
+				else
+					carSpeed := SpeedMax;
+				end if;
+			end present;
+		
+			present inputQuickDecel and not inputQuickAccel then
+				if (((carSpeed) - SpeedInc) > SpeedMin) then %this can be a c function
+					carSpeed := carSpeed - SpeedInc;
+				else
+					carSpeed := SpeedMin;
+				end if;
+			end present;
+
+		
+		present inputSET then %When SET button is pressed the speed value has to be less
+			if((?inputSpeed) < SpeedMin) then
+				carSpeed := SpeedMin;
+			elsif ((?inputSpeed) > SpeedMax) then
+				carSpeed := SpeedMax;
+			else
+				carSpeed := (?inputSpeed);
+			end if;		
+		end present;
+		
+
+			present inputON then 
+				if((?inputCruiseState = 1)) then
+					if(initialOn = 0) then
+						initialOn := 1;
+						if((?inputSpeed) < SpeedMin) then
+							carSpeed := SpeedMin;
+						elsif ((?inputSpeed) > SpeedMax) then
+							carSpeed := SpeedMax;
+						else
+							carSpeed := (?inputSpeed);
+						end if;	
+					end if;
+				end if;
+			end present;		
+		end if;
+		%at the end output the calculated cruiseSpeed value
+		emit outputcruiseSpeed(carSpeed);
+		await tick;
+	end loop
+
+	]
+	end var
+	end var
+	end var
+end module

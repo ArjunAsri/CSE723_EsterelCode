@@ -1,0 +1,36 @@
+%Module : Pedal Detection for acceleration pedal detected and brake pedal detected
+%inputs are the accelerationa and the brake
+%outputs are the brakeInputTOFsm and accelInputTOFSM
+module pedalDetection:
+
+	input inputAccel : float;
+	input inputBrake : float;
+	output accelInputToFSM;
+	output brakeInputToFSM;
+
+	
+	var PedalsMin:= 3.0f : float in
+	[
+	loop
+		
+		%check for the brake
+		present inputBrake then
+			if (?inputBrake) > PedalsMin then
+				emit brakeInputToFSM;
+			end if;
+		end present;
+		
+
+		%check for Accel
+		present inputAccel then
+			if (?inputAccel) > PedalsMin then
+				emit accelInputToFSM;
+			end if;
+
+		end present;
+		await tick;
+	end loop
+	]
+	end var
+	
+end module

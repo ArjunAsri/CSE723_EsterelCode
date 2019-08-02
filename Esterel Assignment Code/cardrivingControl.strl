@@ -1,0 +1,52 @@
+%this is about controlling the car through pedal while in off statefunction saturateThrottle(float, integer) : float ; %function declaration
+
+
+
+module carDrivingControl :
+
+
+%DESCRIPTION: Saturate the throttle command to limit the acceleration.
+%PARAMETERS: isGoingOn - true if the cruise control has just gone into the ON state 
+%                        from another state; false otherwise
+%            saturate - true if saturated, false otherwise
+%RETURNS: throttle output (ThrottleCmd)
+
+
+%regulation is done using the proportional and integral algorithm with Kp and Ki factors
+%regulation is to be protected against the overshoot of its inegral part: reset integral action when the cruise state is going on and frozen when throttle output 
+%is saturated
+function regulateThrottle(boolean, float, float): float; %function decleration
+input inputCruiseState: integer;
+
+input inputCruiseSpeed : float;
+input inputSpeed : float;
+input inputAccel : float;
+output outputThrottleCmd : float;
+
+
+[
+
+var previousState := 0 : integer in
+loop
+
+	if (?inputCruiseState) = 1 then
+			
+		if previousState = 0 then
+			previousState := (?inputCruiseState);
+		%check for throttle output
+		emit outputThrottleCmd(regulateThrottle(true,(?inputCruiseSpeed),(?inputSpeed)));
+		else
+		
+		emit outputThrottleCmd(regulateThrottle(false,(?inputCruiseSpeed),(?inputSpeed))); %vehicle speed, first argument is false becuase the system is not going in the on mode
+		end if;
+	elsif (?inputCruiseState) = 0 then
+		emit outputThrottleCmd(?inputAccel)
+	end if;
+	await tick;
+end loop
+end var;
+]
+end module
+
+
+

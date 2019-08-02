@@ -1,0 +1,156 @@
+% Cruise Controller design in Esterel
+% Authors: Waris Hasan
+%          Arjun Kumar
+
+% Cruise Controller specification 
+
+%Note : The assumption has been made that brake and accelerator pedals are never pressed together,
+%	we therefore may need to take this into account when writing code fo getting the signals
+
+
+
+%Inputs
+	%Pure Inputs
+module FSM:
+	input inputON;
+	input inputOFF;
+	input inputResume;
+
+	input inputBrake;
+	input inputAccel;
+	%Float input Sped
+	input inputSpeed : float;
+
+	%Outputs
+	output outputCruiseState: integer; %off = 0, ON = 1, Stdby = 2, disable = 3
+
+[
+%FSM thread
+var FSMstate  := 0 :integer in
+loop
+	var PedalsMin := 3.0f : float in
+	var  CruiseState := 0 :integer, previousInputSpeed:=0.0f : float, SpeedMin:= 30.0f :float, SpeedMax:= 150.0f : float in%idle state = 0 %local variable
+	%this number can be float %the variable value has to be 0
+			
+
+		    if FSMstate = 0 then %IDLE state
+
+			present inputON then
+		            FSMstate := 1; %cruise controller State is now set to ON 
+		        end present;
+
+		    end if;
+
+		%ON STATE 
+		  if FSMstate = 1 then
+			present inputOFF then 
+				FSMstate := 0; %reset back to off state
+			else 
+				present inputBrake then										 %if brake pressed while cruise control is on go to standby state 
+				
+					FSMstate := 2; 														%standBy state;
+				else
+
+				if (?inputSpeed) > SpeedMin then
+					if ((?inputSpeed) < SpeedMax) then
+						present inputAccel and not inputBrake then
+							FSMstate := 3; 													%disable state
+							
+						else
+							FSMstate := 1;
+							%call regulateThrottle(true,Accel,speed);
+						
+						end present;
+					else 
+						FSMstate := 3;%disable state
+					end if;
+				
+				else 
+					if (?inputSpeed) < SpeedMin then
+						FSMstate := 3;%disable state
+
+					elsif (?inputSpeed) > SpeedMax then
+							FSMstate := 3; %disable state
+						
+	 				end if;
+		 		end if;
+
+				end present;
+
+
+			end present;
+		end if;
+
+		    %From the standby state, the cruise control shall resume either to the on or disable
+		    %states, depending on the accelerator pedal and the speed value when the Resume
+		    %button is pressed. The last set cruise speed shall be reused.
+		%STANDBY STATE
+		  if FSMstate = 2 then
+			
+			present inputOFF then
+							FSMstate := 0;
+			else
+				present inputResume then
+					present not inputAccel then 
+						if ((?inputSpeed) > SpeedMin) and ((?inputSpeed) < SpeedMax) then
+							%ON
+								FSMstate := 1;
+						else 
+							FSMstate := 3;
+							% set the state to be disable state	
+
+						end if;
+					else
+						FSMstate := 3;% set the state to be disable state	
+					end present;
+
+				end present;		
+			end present;
+
+		  end if;
+
+		%Disabled state
+		if FSMstate = 3 then
+		
+			present inputOFF then %the highest priority signal
+						FSMstate := 0;
+			else
+					present inputBrake then
+						FSMstate := 2;
+					else
+			
+						present not inputAccel then
+							if( (?inputSpeed) > SpeedMin) and ((?inputSpeed) <SpeedMax ) then
+									FSMstate := 1; %state set to ON
+							end if;
+
+						end present;
+					end present;
+			end present;
+		end if;
+
+		if(FSMstate = 0) then
+			emit outputCruiseState(0);
+			
+ 		elsif(FSMstate = 1) then
+			emit outputCruiseState(1);
+			
+		elsif(FSMstate = 2) then
+			emit outputCruiseState(2);
+			
+		elsif(FSMstate = 3) then
+			emit outputCruiseState(3);
+		end if;
+		
+		await tick;
+	end var
+	end var
+end loop
+end var
+]
+
+end module
+
+
+
+

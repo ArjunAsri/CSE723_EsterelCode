@@ -1,0 +1,374 @@
+
+
+%our fsm module which decides the state transition based on the inputs
+module FSM:
+	input inputON;
+	input inputOFF;
+	input inputResume;
+
+	input inputBrake;
+	input inputAccel;
+	%Float input Sped
+	input inputSpeed : float;
+
+	%Outputs
+	output outputCruiseState: integer; %off = 0, ON = 1, Stdby = 2, disable = 3
+
+[
+%FSM thread
+var FSMstate  := 0 :integer in
+loop
+	var PedalsMin := 3.0f : float in
+	var  CruiseState := 0 :integer, previousInputSpeed:=0.0f : float, SpeedMin:= 30.0f :float, SpeedMax:= 150.0f : float in%idle state = 0 %local variable
+	%this number can be float %the variable value has to be 0
+			
+
+		    if FSMstate = 0 then %IDLE state
+
+			present inputON then
+		            FSMstate := 1; %cruise controller State is now set to ON 
+		        end present;
+
+		    end if;
+
+		%ON STATE 
+		  if FSMstate = 1 then
+			present inputOFF then 
+				FSMstate := 0; %reset back to off state
+			else 
+				present inputBrake then										 %if brake pressed while cruise control is on go to standby state 
+				
+					FSMstate := 2; 														%standBy state;
+				else
+
+				if (?inputSpeed) > SpeedMin then
+					if ((?inputSpeed) < SpeedMax) then
+						present inputAccel and not inputBrake then
+							FSMstate := 3; 													%disable state
+							
+						else
+							FSMstate := 1;
+							%call regulateThrottle(true,Accel,speed);
+						
+						end present;
+					else 
+						FSMstate := 3;%disable state
+					end if;
+				
+				else 
+					if (?inputSpeed) < SpeedMin then
+						FSMstate := 3;%disable state
+
+					elsif (?inputSpeed) > SpeedMax then
+							FSMstate := 3; %disable state
+						
+	 				end if;
+		 		end if;
+
+				end present;
+
+
+			end present;
+		end if;
+
+		    %From the standby state, the cruise control shall resume either to the on or disable
+		    %states, depending on the accelerator pedal and the speed value when the Resume
+		    %button is pressed. The last set cruise speed shall be reused.
+		%STANDBY STATE
+		  if FSMstate = 2 then
+			
+			present inputOFF then
+							FSMstate := 0;
+			else
+				present inputResume then
+					present not inputAccel then 
+						if ((?inputSpeed) > SpeedMin) and ((?inputSpeed) < SpeedMax) then
+							%ON
+								FSMstate := 1;
+						else 
+							FSMstate := 3;
+							% set the state to be disable state	
+
+						end if;
+					else
+						FSMstate := 3;% set the state to be disable state	
+					end present;
+
+				end present;		
+			end present;
+
+		  end if;
+
+		%Disabled state
+		if FSMstate = 3 then
+		
+			present inputOFF then %the highest priority signal
+						FSMstate := 0;
+			else
+					present inputBrake then
+						FSMstate := 2;
+					else
+			
+						present not inputAccel then
+							if( (?inputSpeed) > SpeedMin) and ((?inputSpeed) <SpeedMax ) then
+									FSMstate := 1; %state set to ON
+							end if;
+
+						end present;
+					end present;
+			end present;
+		end if;
+
+		if(FSMstate = 0) then
+			emit outputCruiseState(0);
+			
+ 		elsif(FSMstate = 1) then
+			emit outputCruiseState(1);
+			
+		elsif(FSMstate = 2) then
+			emit outputCruiseState(2);
+			
+		elsif(FSMstate = 3) then
+			emit outputCruiseState(3);
+		end if;
+		
+		await tick;
+	end var
+	end var
+end loop
+end var
+]
+
+end module
+
+
+
+
+
+%the cruise speed management decides the cruise speed depending on the max and min limits
+module cruiseSpeedManagement:
+	function saturateThrottle(float, integer) : float; %function declaration
+	input inputCruiseState: integer;
+	input inputON, inputSET; %pure signal 
+	input inputQuickAccel;
+	input inputQuickDecel;
+	output outputcruiseSpeed : float;
+	input inputSpeed: float; %currentcarSpeed from the sensor
+	var SpeedMin := 30.0f : float, SpeedMax := 150.0f: float in
+	var SpeedInc := 2.5f: float, carSpeed := 0.0f : float in
+	var initialOn := 0 : integer in
+	[
+
+	loop
+	
+		%cruise speed should onlu be managed when the cruise control is enabled meaning 
+		%when it is in the ON ,
+		%standby OR disable mode
+		if(?inputCruiseState) = 0 then
+			initialOn:= 0;  		%reset the initial on
+		end if;
+	
+		if ((?inputCruiseState = 1) or (?inputCruiseState = 2) or (?inputCruiseState = 3)) then % and statement can also be used int he function
+			%emit functionOutput (saturateThrottle(2.5f,1));
+			%emit functionOutput(2.5f);
+
+			present inputQuickAccel and not inputQuickDecel then
+				if (((carSpeed) + SpeedInc) < SpeedMax) then %this can be a c function
+					carSpeed := carSpeed + SpeedInc;
+					
+				else
+					carSpeed := SpeedMax;
+				end if;
+			end present;
+		
+			present inputQuickDecel and not inputQuickAccel then
+				if (((carSpeed) - SpeedInc) > SpeedMin) then %this can be a c function
+					carSpeed := carSpeed - SpeedInc;
+				else
+					carSpeed := SpeedMin;
+				end if;
+			end present;
+
+		
+		present inputSET then %When SET button is pressed the speed value has to be less
+			if((?inputSpeed) < SpeedMin) then
+				carSpeed := SpeedMin;
+			elsif ((?inputSpeed) > SpeedMax) then
+				carSpeed := SpeedMax;
+			else
+				carSpeed := (?inputSpeed);
+			end if;		
+		end present;
+		
+
+			present inputON then 
+				if((?inputCruiseState = 1)) then
+					if(initialOn = 0) then
+						initialOn := 1;
+						if((?inputSpeed) < SpeedMin) then
+							carSpeed := SpeedMin;
+						elsif ((?inputSpeed) > SpeedMax) then
+							carSpeed := SpeedMax;
+						else
+							carSpeed := (?inputSpeed);
+						end if;	
+					end if;
+				end if;
+			end present;		
+		end if;
+		%at the end output the calculated cruiseSpeed value
+		emit outputcruiseSpeed(carSpeed);
+		await tick;
+	end loop
+
+	]
+	end var
+	end var
+	end var
+end module
+
+
+
+%Break Module
+module pedalDetection:
+
+	input inputAccel : float;
+	input inputBrake : float;
+	output accelInputToFSM;
+	output brakeInputToFSM;
+
+	
+	var PedalsMin:= 3.0f : float in
+	[
+	loop
+		
+		%check for the brake
+		present inputBrake then
+			if (?inputBrake) > PedalsMin then
+				emit brakeInputToFSM;
+			end if;
+		end present;
+		
+
+		%check for Accel
+		present inputAccel then
+			if (?inputAccel) > PedalsMin then
+				emit accelInputToFSM;
+			end if;
+
+		end present;
+		await tick;
+	end loop
+	]
+	end var
+	
+end module
+
+%Car DrivingControl Module 
+module carDrivingControl :
+function regulateThrottle(boolean, float, float): float; %function decleration
+
+%the inputs for the modules are the current data 
+input inputCruiseState: integer;
+
+input inputCruiseSpeed : float;
+input inputSpeed : float;
+input inputAccel : float;
+%output
+output outputThrottleCmd : float;
+
+
+[
+%remember the previous state so that the transition  is correct when we switch between the states
+var previousState := 0 : integer in
+loop
+
+	if (?inputCruiseState) = 1 then
+			
+		if previousState = 0 then
+			previousState := (?inputCruiseState);
+		%check for throttle output
+		emit outputThrottleCmd(regulateThrottle(true,(?inputCruiseSpeed),(?inputSpeed)));
+		else
+		%if the system has not transitioned from the off state to the on state
+		emit outputThrottleCmd(regulateThrottle(false,(?inputCruiseSpeed),(?inputSpeed))); %vehicle speed, first argument is false becuase the system is not going in the on mode
+		end if;
+	elsif (?inputCruiseState) = 0 then
+			present inputAccel then 
+				emit outputThrottleCmd(?inputAccel);
+			else
+				emit outputThrottleCmd(0.0f); 
+			end present;
+	end if;
+	await tick;
+end loop
+end var;
+]
+end module
+
+%The top level has the required 
+
+module toplevel:
+	%Inputs for the cruise state controller
+	input ON, OFF;
+	input SET, RESUME; 
+	input QuickDecel, QuickAccel;
+	input Accel : float;
+	input brake : float;
+	input speed : float;
+%outputs of the cruise state controller
+	output cruiseState : integer;
+	output cruiseSpeed : float;
+	output ThrottleCmd : float;
+	
+
+	signal breakFSM, accelFSM in
+%OUTPUT signals for our design 
+	signal inputCruiseStateFromFSM:=0 : integer in
+	signal SignalThrottleCmd:=0.0f : float in
+	signal SignalCruiseSpeed:=0.0f : float in
+loop
+
+
+		emit ThrottleCmd(?SignalThrottleCmd);
+		emit cruiseSpeed(?SignalCruiseSpeed);
+		emit cruiseState(?inputCruiseStateFromFSM);
+
+	await tick;
+end loop;
+
+||
+	run cruiseSpeedManagement[ signal inputCruiseStateFromFSM/inputCruiseState,
+							ON/inputON, 
+							SET/inputSET, 
+							QuickAccel/inputQuickAccel,
+							QuickDecel /inputQuickDecel,
+							SignalCruiseSpeed/outputcruiseSpeed,
+							speed/inputSpeed]
+||
+run pedalDetection[signal Accel/inputAccel,
+					brake/inputBrake,
+					accelFSM/accelInputToFSM,
+						breakFSM/brakeInputToFSM]
+
+||
+run FSM [ signal ON/inputON,
+				 OFF/inputOFF,
+				 RESUME/inputResume,
+				 breakFSM/inputBrake,
+				 accelFSM/inputAccel,
+				 speed/inputSpeed,
+				inputCruiseStateFromFSM/outputCruiseState]
+
+||
+run carDrivingControl [signal inputCruiseStateFromFSM/inputCruiseState,
+							 SignalCruiseSpeed/inputCruiseSpeed,
+							 speed/inputSpeed,
+							 Accel/inputAccel,
+							 SignalThrottleCmd/outputThrottleCmd]
+
+end signal;
+end signal;
+end signal;
+end signal;
+end module
